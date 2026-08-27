@@ -47,15 +47,29 @@ export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'd
  * and the justification must be a non-empty sentence.
  * @param sandboxPermissions - the raw `sandbox_permissions` argument, if given.
  * @param justification - the raw `justification` argument, if given.
+ * @param effectiveMode - the call's effective mode, when known. A session
+ *   already at the widest mode (and any request naming the mode the call
+ *   already has) is a no-op (see {@link approveEscalation}), so its
+ *   justification is never shown to a human and the pairing may be relaxed.
  */
-export function validateEscalationArgs(sandboxPermissions: string | undefined, justification: string | undefined): void {
-  if (sandboxPermissions !== undefined && justification === undefined) {
-    throw new Error('invalid escalation: sandbox_permissions requires a justification')
-  }
+export function validateEscalationArgs(
+  sandboxPermissions: string | undefined,
+  justification: string | undefined,
+  effectiveMode?: SandboxMode,
+): void {
   if (justification !== undefined && sandboxPermissions === undefined) {
     throw new Error('invalid escalation: justification is only valid together with sandbox_permissions')
   }
-  if (justification !== undefined && justification.trim().length === 0) {
+  // A full-access session cannot widen anything, and a same-mode request
+  // widens nothing either — both prompt nobody, so a missing or blank
+  // justification cannot amount to a malformed ask. Tolerate the reflexive
+  // fill rather than failing the call.
+  const noOp = effectiveMode === 'danger-full-access'
+    || (sandboxPermissions !== undefined && sandboxPermissions === effectiveMode)
+  if (!noOp && sandboxPermissions !== undefined && justification === undefined) {
+    throw new Error('invalid escalation: sandbox_permissions requires a justification')
+  }
+  if (!noOp && justification !== undefined && justification.trim().length === 0) {
     throw new Error('invalid justification: expected a non-empty sentence')
   }
 }
@@ -156,6 +170,18 @@ export interface EscalationRequest {
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
+  // A session already at the widest mode cannot widen anything: any escalation
+  // fields it carries are ignorable, so run under the standing policy without
+  // prompting. The schema advertises the closed target vocabulary statically
+  // while the effective mode is per-session, so a Full access session is still
+  // offered the fields — tolerate the reflexive fill (including a narrower
+  // target like the first enum entry) instead of failing the call.
+  if (effectiveMode === 'danger-full-access') return effectiveMode
+  // A request naming the mode the call already has is a no-op, not an
+  // escalation: the standing policy already grants exactly that mode, so
+  // stamping it onto this call cannot widen anything and must never prompt a
+  // human.
+  if (mode === effectiveMode) return mode as SandboxMode
   // Strict widening is an EXECUTION check against the call's effective mode —
   // deliberately not a schema constraint (the enum is the closed target
   // vocabulary; the effective mode is per-call truth).

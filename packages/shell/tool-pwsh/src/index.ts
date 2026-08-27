@@ -84,7 +84,7 @@ interface PwshForegroundResult {
 }
 
 /* jscpd:ignore-start -- minimal mirror of dsh-tool-bash's validation and execute plumbing (Agent Note). */
-function validatePwshArgs(args: PwshToolArgs): void {
+function validatePwshArgs(args: PwshToolArgs, effectiveMode?: SandboxMode): void {
   if (args.command.trim().length === 0) {
     throw new Error('invalid command: expected a non-empty string')
   }
@@ -95,8 +95,9 @@ function validatePwshArgs(args: PwshToolArgs): void {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
   }
   // The escalation pairing (sandbox_permissions ⇔ justification, non-empty) is
-  // the shared rule both enforcing families validate identically.
-  validateEscalationArgs(args.sandbox_permissions, args.justification)
+  // the shared rule both enforcing families validate identically; the call's
+  // effective mode relaxes it only for a same-mode no-op request.
+  validateEscalationArgs(args.sandbox_permissions, args.justification, effectiveMode)
 }
 /* jscpd:ignore-end */
 
@@ -345,9 +346,11 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
     /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor Agent Note). */
     async execute(args: PwshToolArgs, exec) {
-      validatePwshArgs(args)
-      // Description is display metadata; workdir defaults to the caller's session.
+      // Resolve first: a same-mode escalation request is a no-op whose pairing
+      // tolerance needs the call's effective mode.
       const standingPolicy = resolveSandboxPolicy(exec)
+      validatePwshArgs(args, standingPolicy?.mode)
+      // Description is display metadata; workdir defaults to the caller's session.
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
         ? await approvePwshEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
         : undefined

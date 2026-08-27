@@ -40,6 +40,20 @@ describe('validateEscalationArgs', () => {
     expect(() => { validateEscalationArgs(undefined, 'orphan reason') }).toThrow(/only valid together with sandbox_permissions/)
     expect(() => { validateEscalationArgs('workspace-write', '   ') }).toThrow(/non-empty sentence/)
   })
+
+  it('relaxes the pairing for a no-op request — full-access session, or a same-mode target — and only there', () => {
+    // A Full access session cannot widen anything: whichever target the model
+    // fills, the justification may be absent or blank.
+    expect(() => { validateEscalationArgs('workspace-write', undefined, 'danger-full-access') }).not.toThrow()
+    expect(() => { validateEscalationArgs('danger-full-access', '', 'danger-full-access') }).not.toThrow()
+    // Naming the mode the call already has widens nothing and prompts nobody.
+    expect(() => { validateEscalationArgs('workspace-write', undefined, 'workspace-write') }).not.toThrow()
+    // A different target under a confined mode keeps the strict pairing, and a
+    // justification alone always fails.
+    expect(() => { validateEscalationArgs('danger-full-access', undefined, 'workspace-write') }).toThrow(/requires a justification/)
+    expect(() => { validateEscalationArgs('danger-full-access', '', 'workspace-write') }).toThrow(/non-empty sentence/)
+    expect(() => { validateEscalationArgs(undefined, 'orphan reason', 'workspace-write') }).toThrow(/only valid together with sandbox_permissions/)
+  })
 })
 
 describe('the model-facing markers', () => {
@@ -81,13 +95,33 @@ describe('approveEscalation', () => {
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
   })
 
-  it('a non-widening request fails closed with its own text and never asks', async () => {
+  it('a same-mode request grants the standing mode as a no-op and never asks', async () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
-    await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
-      .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
-    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
-      .rejects.toThrow(/not strictly wider/)
+    for (const mode of ['read-only', 'workspace-write'] as const) {
+      await expect(approveEscalation(req({ requestedMode: mode, effectiveMode: mode, justification: '' }), spy))
+        .resolves.toBe(mode)
+    }
+    expect(seen).toEqual([])
+  })
+
+  it('a Full access session ignores any escalation target as a no-op and never asks', async () => {
+    const seen: unknown[] = []
+    const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
+    // Even a NARROWER target (the reflexive first enum entry) runs under the
+    // standing full-access policy instead of failing or prompting.
+    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access', justification: '' }), spy))
+      .resolves.toBe('danger-full-access')
+    await expect(approveEscalation(req({ requestedMode: 'danger-full-access', effectiveMode: 'danger-full-access', justification: '' }), spy))
+      .resolves.toBe('danger-full-access')
+    expect(seen).toEqual([])
+  })
+
+  it('an unknown/invalid effective mode still fails closed with its own text and never asks', async () => {
+    const seen: unknown[] = []
+    const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
+    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'unknown-mode' as never }), spy))
+      .rejects.toThrow(/not strictly wider than this call's current "unknown-mode" mode/)
     expect(seen).toEqual([])
   })
 
