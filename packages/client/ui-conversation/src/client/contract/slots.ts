@@ -139,6 +139,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
+     * Additive turn-tail metadata badges (per-turn cost, model stats, …),
+     * rendered between the turnTail chain and IconActions. List-kind: every
+     * registration renders one row per `id` cell in `order` sequence, so
+     * badges coexist — unlike the single-election turnTail chain, where one
+     * extension swallows the others. Entries receive the TurnTailOwnerProps
+     * and render null when they have nothing to show (a badge must never
+     * claim a whole turn the way a chain selector does).
+     */
+    'conversation.chat.turnBadges': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
+    /**
      * Action strip attached to one finalized assistant message, rendered
      * inside that message's IconActions row. The chat entry owns the render
      * site and passes the addressed message identity; contributors add

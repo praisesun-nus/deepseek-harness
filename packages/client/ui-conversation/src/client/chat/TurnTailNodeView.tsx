@@ -6,7 +6,7 @@ import { assistantText } from './turn-assistant.ts'
 import css from './TurnTailNodeView.module.css'
 
 type TurnTailNodeViewProps = ChatNodeViewProps<'turn-tail'>
-  & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.assistant-actions'>
+  & PropsRenderSlots<'conversation.chat.turnTail' | 'conversation.chat.turnBadges' | 'conversation.chat.assistant-actions'>
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
@@ -22,7 +22,11 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const closing = data.closing
   const owner: TurnTailOwnerProps = { turn, seq: closing?.finalNode.seq ?? data.seq, openFile }
   const tail = renderSlotChain('conversation.chat.turnTail', owner)
-  if (closing === null) return tail === null ? null : <div className={css.root}>{tail}</div>
+  const badges = renderSlot('conversation.chat.turnBadges', owner)
+  // The badges outlet is a display:contents wrapper — a non-null node even
+  // with nothing in it — so the tail-null guard keeps deciding this branch;
+  // the badges wrapper sits inside the same root when it renders at all.
+  if (closing === null) return tail === null ? null : <div className={css.root}>{tail}{badges}</div>
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
@@ -35,6 +39,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   return (
     <div className={css.root} data-turn-tail={data.turn} data-time-hover-root>
       {tail}
+      {badges}
       <MessageIconActions
         text={assistantText(closing.blocks)}
         time={closing.time}
