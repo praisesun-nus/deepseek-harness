@@ -51,7 +51,7 @@ interface BashToolArgs {
   justification?: string
 }
 
-function validateBashArgs(args: BashToolArgs): void {
+function validateBashArgs(args: BashToolArgs, effectiveMode?: SandboxMode): void {
   if (args.command.trim().length === 0) {
     throw new Error('invalid command: expected a non-empty string')
   }
@@ -62,8 +62,9 @@ function validateBashArgs(args: BashToolArgs): void {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
   }
   // The escalation pairing (sandbox_permissions ⇔ justification, non-empty) is
-  // the shared rule both enforcing families validate identically.
-  validateEscalationArgs(args.sandbox_permissions, args.justification)
+  // the shared rule both enforcing families validate identically; the call's
+  // effective mode relaxes it only for a same-mode no-op request.
+  validateEscalationArgs(args.sandbox_permissions, args.justification, effectiveMode)
 }
 
 function bashDescription(backgroundEnabled: boolean, escalationModes: readonly SandboxMode[]): string {
@@ -327,9 +328,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       }],
     },
     async execute(args: BashToolArgs, exec) {
-      validateBashArgs(args)
-      // Description is display metadata; workdir defaults to the caller's session.
+      // Resolve first: a same-mode escalation request is a no-op whose pairing
+      // tolerance needs the call's effective mode.
       const standingPolicy = resolveSandboxPolicy(exec)
+      validateBashArgs(args, standingPolicy?.mode)
+      // Description is display metadata; workdir defaults to the caller's session.
       const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
         ? await approveBashEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
         : undefined

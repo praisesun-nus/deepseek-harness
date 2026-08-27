@@ -613,15 +613,18 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
-  it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
+  it('rejects injected escalation without a sandbox and treats a same-mode request as a no-op', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')
 
-    const { ctx } = await setupSandboxed(true)
+    const { ctx, bash } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
-    expect(text(result)).toContain('not strictly wider')
+    // Requesting the mode the call already has is a no-op: it runs without
+    // prompting, even with a blank justification, instead of failing the call.
+    const sameMode = await call(ctx, 'bash', { ...escalate, justification: '' }, sandboxAgent('workspace-write'))
+    expect(sameMode.isError).toBe(false)
+    expect(bash.modes).toEqual(['workspace-write'])
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
@@ -630,6 +633,24 @@ describe('sandbox escalation through the generic task producer', () => {
       data: { mode: 'unknown-mode' },
     })
     expect(text(await call(ctx, 'bash', escalate, malformed))).toContain('not strictly wider')
+  })
+
+  it('a Full access session ignores reflexive escalation args, including a narrower target', async () => {
+    const { ctx, bash } = await setupSandboxed(true)
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+    // Whatever the model fills (the first enum entry workspace-write included),
+    // the call runs under the standing full-access policy without prompting.
+    for (const sandboxPermissions of ['workspace-write', 'danger-full-access']) {
+      const result = await call(
+        ctx, 'bash',
+        { ...escalate, sandbox_permissions: sandboxPermissions, justification: '' },
+        sandboxAgent('danger-full-access'),
+      )
+      expect(result.isError).toBe(false)
+    }
+    expect(bash.modes).toEqual(['danger-full-access', 'danger-full-access'])
+    expect(prompted).not.toHaveBeenCalled()
   })
 
   it('fails closed when approval cannot be routed', async () => {
