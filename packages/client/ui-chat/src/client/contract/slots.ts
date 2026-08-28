@@ -214,6 +214,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation.chat.turnTail': { kind: 'chain'; scope: 'session'; owner: TurnTailOwnerProps }
     /**
+     * Additive completed-Turn metadata badges such as per-turn cost and model
+     * statistics. Every registration renders one `id` cell in ascending
+     * `order`, so independent badges coexist without competing for the
+     * single-election turnTail chain. Entries receive the completed Turn,
+     * closing sequence, and file opener, and should render null when empty.
+     */
+    'conversation.chat.turnBadges': { kind: 'list'; scope: 'session'; owner: TurnTailOwnerProps }
+    /**
      * Ordered actions for one finalized assistant message. Each entry receives
      * the durable message id; a fresh `id` adds an action and reusing one replaces
      * that entry. With no entries, the standard action row remains unchanged.
